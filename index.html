@@ -6,18 +6,6 @@
     <title>英文遊戲大雜燴：完整版</title>
     <!-- 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Firebase JS 模組 -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, addDoc, getDocs, deleteDoc, where, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // 設定 Firebase 全域變數
-        window.firebaseImports = { 
-            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, 
-            getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, addDoc, getDocs, deleteDoc, where, updateDoc, setLogLevel
-        };
-    </script>
 
     <style>
         /* 定義可愛的卡通字體，使用 Inter 搭配圓角和粗體營造童趣感 */
@@ -68,7 +56,6 @@
         }
 
         /* Bingo 相關樣式 */
-        /* 移除固定的 5x5 CSS, 改用 inline style 實現 4x4 */
         .bingo-grid {
             display: grid;
             gap: 4px;
@@ -88,6 +75,7 @@
             border: 2px solid #FFD700;
             transition: all 0.2s;
             height: 100%;
+            text-transform: lowercase; /* 確保卡片上的文字顯示為小寫 */
         }
         .bingo-cell.marked {
             background-color: #90EE90; /* Success Green */
@@ -146,7 +134,6 @@
             </svg>
             英文遊樂園
         </h1>
-        <p id="user-id-display" class="text-xs text-pink-700 mt-1 break-words">用戶ID: 載入中...</p>
     </header>
 
     <!-- 導航列 -->
@@ -168,6 +155,7 @@
             <button data-game="game5" id="tab-game5" onclick="changeGame('game5')" class="tab-btn bg-white py-2 px-3 md:px-6 rounded-full text-sm md:text-lg font-bold text-gray-700 transition duration-300 shadow-md">
                 👂 字母排序
             </button>
+            <!-- 重新加入單字後台 Tab -->
             <button data-game="admin" id="tab-admin" onclick="changeGame('admin')" class="tab-btn bg-white py-2 px-3 md:px-6 rounded-full text-sm md:text-lg font-bold text-gray-700 transition duration-300 shadow-md">
                 ⚙️ 單字後台
             </button>
@@ -177,24 +165,26 @@
     <!-- 主內容區 -->
     <main id="game-content" class="w-full max-w-4xl bg-white p-4 md:p-8 rounded-2xl shadow-xl border-4 border-secondary-blue flex flex-col space-y-6 min-h-[500px]">
         <!-- 內容由 JS 渲染 -->
+        <div class="flex justify-center items-center h-full">
+            <p class="text-xl text-gray-500">正在載入應用程式...</p>
+        </div>
     </main>
 
     <!-- 全域狀態與設定 -->
     <script>
-        // Firestore Data Management & Auth Setup
-        let db, auth;
-        let userId = '';
-        let isAuthReady = false;
-        let currentGame = 'game1';
-        let wordList = []; // 儲存從 Firestore 讀取的單字
+        // 移除所有 Firebase 相關的全域變數和導入
 
-        // 全域變數檢查與初始化 (來自 Immersive Canvas)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        const FIREBASE_COLLECTION = 'word_guess_words'; // 用於單字後台
-
-        const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+        // 修正: 將 ALPHABET 轉換為小寫
+        const ALPHABET = 'abcdefghijklmnopqrstuvwxyz'.split(''); 
+        const LOCAL_STORAGE_KEY = 'G3_CustomWords'; // localStorage key for persistent storage
+        
+        // 猜單字遊戲的內建單字庫 (用於取代 Firestore)
+        // 內部仍使用大寫，但在後台輸入和遊戲顯示時會被調整
+        const GAME3_DICTIONARY = [
+            "APPLE", "BANANA", "CAT", "DOG", "ELEPHANT", "GIRAFFE", "MONKEY", 
+            "SUN", "RAIN", "CLOUD", "HAPPY", "SMILE", "BOOK", "PENCIL", "SCHOOL"
+        ].map(word => word.toUpperCase());
+        
         const G2_COLOR_PALETTE = [
             { bg: 'bg-yellow-200', border: 'border-yellow-400', text: 'text-yellow-800' }, 
             { bg: 'bg-green-200', border: 'border-green-400', text: 'text-green-800' },   
@@ -204,14 +194,19 @@
             { bg: 'bg-pink-200', border: 'border-pink-400', text: 'text-pink-800' }      
         ];
 
-        // 遊戲 4 (BINGO) 單字庫 - 來自使用者提供
+        // 遊戲 4 (BINGO) 單字庫
         const BINGO_DICTIONARY = [
             "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "HOW OLD", "ARE", "YOU", "I", "AM", "YEARS OLD", 
             "ONE", "TWO", "THREE", "FOUR", "FIVE", "ANGRY", "HAPPY", "SAD", "HUNGRY", "THIRSTY", 
             "YES", "NO", "NOT", "BALL", "CAR", "DOLL", "KITE", "ROBOT", "YO-YO", "WHAT", "THIS", 
             "THAT", "IT", "IS", "A", "BLUE", "GREEN", "PINK", "PURPLE", "RED", "YELLOW", "COLOR"
         ].map(word => word.toUpperCase());
-        const BINGO_SIZE = 4; // 修正: 賓果卡大小改為 4x4
+        const BINGO_SIZE = 4; // 4x4
+
+        let currentGame = 'game1';
+        
+        // 儲存從 localStorage 載入的自訂單字
+        let localWordList = []; 
 
         let state = {
             // Game 1
@@ -222,14 +217,13 @@
             g2_matchCards: [],
             g2_flippedCards: [],
             g2_matchCount: 0,
-            g2_letters: ['A', 'B', 'C', 'D'], // 修正: 4 字母 (8 張卡片)
+            g2_letters: ['A', 'B', 'C', 'D'], // 仍使用大寫作為配對基底
 
             // Game 3
             g3_currentGuessWord: '',
             g3_guessedLetters: new Set(),
             g3_wrongGuesses: 0,
             g3_gameStatus: 'ready',
-            g3_imageUrl: '',
             g3_MAX_WRONG: 6,
 
             // Game 4 (Bingo)
@@ -249,129 +243,29 @@
         };
 
 
-        // --- TTS 相關工具函式 (TTS API: gemini-2.5-flash-preview-tts) ---
-        function base64ToArrayBuffer(base64) {
-            const binaryString = atob(base64);
-            const len = binaryString.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            return bytes.buffer;
-        }
-
-        function pcmToWav(pcm16, sampleRate) {
-            const numChannels = 1;
-            const bitsPerSample = 16;
-            const blockAlign = numChannels * (bitsPerSample / 8);
-            const byteRate = sampleRate * blockAlign;
-            const dataSize = pcm16.length * 2;
-            const buffer = new ArrayBuffer(44 + dataSize);
-            const view = new DataView(buffer);
-            let offset = 0;
-
-            function writeString(str) {
-                for (let i = 0; i < str.length; i++) {
-                    view.setUint8(offset + i, str.charCodeAt(i));
-                }
-                offset += str.length;
-            }
-
-            // RIFF chunk
-            writeString('RIFF');
-            view.setUint32(offset, 36 + dataSize, true); offset += 4;
-            writeString('WAVE');
-
-            // fmt chunk
-            writeString('fmt ');
-            view.setUint32(offset, 16, true); offset += 4;       // Subchunk1Size (16 for PCM)
-            view.setUint16(offset, 1, true); offset += 2;        // AudioFormat (1 for PCM)
-            view.setUint16(offset, numChannels, true); offset += 2;
-            view.setUint32(offset, sampleRate, true); offset += 4;
-            view.setUint32(offset, byteRate, true); offset += 4;
-            view.setUint16(offset, blockAlign, true); offset += 2;
-            view.setUint16(offset, bitsPerSample, true); offset += 2;
-
-            // data chunk
-            writeString('data');
-            view.setUint32(offset, dataSize, true); offset += 4;
-
-            // PCM data
-            for (let i = 0; i < pcm16.length; i++) {
-                view.setInt16(offset, pcm16[i], true);
-                offset += 2;
-            }
-
-            return new Blob([buffer], { type: 'audio/wav' });
-        }
-
+        // --- TTS 相關工具函式 (使用瀏覽器 SpeechSynthesis) ---
         async function callTTS(text) {
-            // Note: state.g4_isCalling is set by startCallingG4
-            
-            // Add small delay to ensure UI updates before blocking TTS fetch starts
-            await new Promise(r => setTimeout(r, 50)); 
-
-            try {
-                const payload = {
-                    contents: [{
-                        parts: [{ text: text }]
-                    }],
-                    generationConfig: {
-                        responseModalities: ["AUDIO"],
-                        speechConfig: {
-                            voiceConfig: {
-                                prebuiltVoiceConfig: { voiceName: "Kore" }
-                            }
-                        }
-                    },
-                    model: "gemini-2.5-flash-preview-tts"
-                };
-                
-                const apiKey = ""; 
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
-                
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                if (!response.ok) {
-                    throw new Error(`TTS API error: ${response.status}`);
-                }
-                
-                const result = await response.json();
-                const part = result?.candidates?.[0]?.content?.parts?.[0];
-                const audioData = part?.inlineData?.data;
-                const mimeType = part?.inlineData?.mimeType;
-
-                if (audioData && mimeType && mimeType.startsWith("audio/L16")) {
-                    const sampleRateMatch = mimeType.match(/rate=(\d+)/);
-                    const sampleRate = sampleRateMatch ? parseInt(sampleRateMatch[1], 10) : 16000;
-                    
-                    const pcmData = base64ToArrayBuffer(audioData);
-                    const pcm16 = new Int16Array(pcmData);
-                    const wavBlob = pcmToWav(pcm16, sampleRate);
-                    const audioUrl = URL.createObjectURL(wavBlob);
-                    
-                    const audio = new Audio(audioUrl);
-                    await new Promise(resolve => {
-                        audio.onended = resolve;
-                        audio.play().catch(e => {
-                            console.error("Audio playback failed:", e);
-                            resolve(); // resolve even on failure to unblock
-                        });
-                    });
-                } else {
-                    console.error("TTS response missing audio data.");
-                    MessageBox.show("語音生成失敗或資料格式錯誤。", true);
-                }
-
-            } catch (error) {
-                console.error("TTS API call failed:", error);
-                MessageBox.show(`語音生成失敗: ${error.message}`, true);
+            if (!('speechSynthesis' in window)) {
+                MessageBox.show("瀏覽器不支持語音播放功能。", true);
+                return;
             }
+            
+            // 語音播報仍使用大寫單字，這樣發音會更清晰自然。
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US'; 
+            utterance.rate = 0.9;
+            
+            await new Promise(resolve => {
+                utterance.onend = resolve;
+                utterance.onerror = (e) => {
+                    console.error("SpeechSynthesis error:", e);
+                    MessageBox.show("語音播放失敗。", true);
+                    resolve();
+                };
+                window.speechSynthesis.speak(utterance);
+            });
         }
+
 
         // 錯誤處理模組
         const MessageBox = {
@@ -387,75 +281,28 @@
             }
         };
 
-        // Firebase 初始化與認證
-        async function initializeFirebase() {
-            if (!firebaseConfig || !window.firebaseImports) {
-                console.error("Firebase config or imports are missing.");
-                MessageBox.show("系統錯誤：Firebase 設定缺失。");
-                return;
+        // --- LocalStorage 存儲功能 ---
+
+        function loadWordsFromLocal() {
+            try {
+                const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+                localWordList = stored ? JSON.parse(stored) : [];
+                if (!Array.isArray(localWordList)) localWordList = []; // 數據格式檢查
+            } catch (e) {
+                console.error("Error loading words from local storage:", e);
+                localWordList = [];
             }
-            
-            const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, setLogLevel } = window.firebaseImports;
-            
-            setLogLevel('Debug');
-            const app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-
-            if (initialAuthToken) {
-                try {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } catch (error) {
-                    console.error("Custom token sign-in failed, falling back to anonymous:", error);
-                    await signInAnonymously(auth);
-                }
-            } else {
-                await signInAnonymously(auth);
-            }
-
-            onAuthStateChanged(auth, (user) => {
-                const userIdDisplay = document.getElementById('user-id-display'); 
-                
-                if (user) {
-                    userId = user.uid;
-                    isAuthReady = true;
-                    console.log("Firebase initialized. User ID:", userId);
-                    if (userIdDisplay) { 
-                        userIdDisplay.textContent = `用戶ID: ${userId}`;
-                    }
-                    
-                    subscribeToWordList();
-                    renderApp();
-
-                } else {
-                    console.log("No user signed in.");
-                    isAuthReady = false;
-                }
-            });
         }
 
-        // Firestore 訂閱 (用於單字庫)
-        function subscribeToWordList() {
-            if (!db || !userId) return;
-            const { collection, query, onSnapshot } = window.firebaseImports;
-            
-            const path = `artifacts/${appId}/users/${userId}/${FIREBASE_COLLECTION}`;
-            const q = query(collection(db, path));
-
-            onSnapshot(q, (snapshot) => {
-                wordList = [];
-                snapshot.forEach((doc) => {
-                    wordList.push({ id: doc.id, ...doc.data() });
-                });
-                console.log("Words updated from Firestore:", wordList);
-                
-                if (currentGame === 'admin') renderWordAdmin();
-                if (currentGame === 'game3' || currentGame === 'game4') renderApp(); 
-            }, (error) => {
-                console.error("Error subscribing to words:", error);
-                MessageBox.show("無法載入單字列表。");
-            });
+        function saveWordsToLocal() {
+            try {
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(localWordList));
+            } catch (e) {
+                console.error("Error saving words to local storage:", e);
+                MessageBox.show("無法保存單字到您的瀏覽器。", true);
+            }
         }
+
 
         // --- 核心應用程式控制 ---
         function setTabActive(gameName) {
@@ -474,14 +321,13 @@
         function changeGame(gameName) {
             currentGame = gameName;
             setTabActive(gameName);
-            if (isAuthReady) {
-                renderApp();
-            }
+            renderApp();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         function renderApp() {
-            if (!isAuthReady) return;
+            // 在每次渲染前先載入本地儲存的單字
+            loadWordsFromLocal(); 
 
             switch (currentGame) {
                 case 'game1':
@@ -500,18 +346,15 @@
                 case 'game5':
                     initGame5();
                     break;
-                case 'admin':
+                case 'admin': // 處理 Admin 頁面
                     renderWordAdmin();
                     break;
             }
         }
 
         window.onload = function() {
-            // FIX: 確保初始遊戲畫面在 Firebase 異步載入前渲染出來，避免畫面空白。
             setTabActive(currentGame);
-            renderGame1(); 
-            
-            initializeFirebase();
+            renderApp();
         }
     </script>
 
@@ -594,7 +437,7 @@
                     } else {
                         htmlContent += `<span onclick="deleteClickedLetterG1(${originalIndex})" 
                                              class="whiteboard-letter transition-colors duration-150 p-1 rounded-md hover:bg-red-200 cursor-pointer 
-                                                    text-3xl md:text-5xl font-extrabold text-gray-800">
+                                                    text-3xl md:text-5xl font-extrabold text-gray-800 lowercase">
                                            ${item}
                                        </span>`;
                     }
@@ -606,7 +449,8 @@
 
         function insertLetterG1(char) {
             if (state.g1_currentWord.length >= 40) return; 
-            state.g1_currentWord.splice(state.g1_cursorIndex, 0, char);
+            // 修正: 插入小寫字母
+            state.g1_currentWord.splice(state.g1_cursorIndex, 0, char.toLowerCase());
             state.g1_cursorIndex++;
             renderWhiteboardG1();
         }
@@ -673,7 +517,6 @@
             const card = state.g2_matchCards[cardIndex];
 
             if (!card) return;
-            // 修正: 將卡片數量從 12 減少到 8 後，網格佈局也要調整
             if (card.matched || card.flipped || state.g2_flippedCards.length === 2) {
                 return;
             }
@@ -747,7 +590,6 @@
                 `;
             }).join('');
 
-            // 修正: 將網格佈局從 grid-cols-4 (12 張卡片) 調整為 grid-cols-4 (8 張卡片)
             container.innerHTML = `
                 <section class="w-full bg-accent-yellow p-4 rounded-xl shadow-inner border-b-8 border-yellow-600">
                     <h2 class="text-xl md:text-3xl font-bold text-yellow-900 mb-4 text-center">🧩 字母對對碰 (Letter Match-Up)</h2>
@@ -835,31 +677,34 @@
 
 
         async function initGame3() {
-            if (wordList.length === 0) {
+            // 決定單字庫：如果 localWordList 有單字，就使用本地的；否則使用內建的。
+            const sourceDictionary = localWordList.length > 0 ? localWordList.map(item => item.word) : GAME3_DICTIONARY;
+
+            if (sourceDictionary.length === 0) {
                 state.g3_gameStatus = 'no_words';
                 renderGame3();
-                MessageBox.show("請先到「單字後台」新增單字！");
+                MessageBox.show("猜單字遊戲目前沒有單字！請至後台新增。", true);
                 return;
             }
             
-            const randomWordObj = wordList[Math.floor(Math.random() * wordList.length)];
-            state.g3_currentGuessWord = randomWordObj.word.toUpperCase();
+            const randomWord = sourceDictionary[Math.floor(Math.random() * sourceDictionary.length)];
+            state.g3_currentGuessWord = randomWord.toUpperCase(); // 內部邏輯仍使用大寫
             state.g3_guessedLetters = new Set();
             state.g3_wrongGuesses = 0;
             state.g3_gameStatus = 'playing';
-            
-            // 移除靜態圖片 URL
-            state.g3_imageUrl = ''; 
             
             renderGame3(); 
         }
 
         function guessLetterG3(letter) {
-            if (state.g3_gameStatus !== 'playing' || state.g3_guessedLetters.has(letter)) return;
+            // 內部邏輯使用大寫進行判斷
+            const upperCaseLetter = letter.toUpperCase();
             
-            state.g3_guessedLetters.add(letter);
+            if (state.g3_gameStatus !== 'playing' || state.g3_guessedLetters.has(upperCaseLetter)) return;
             
-            if (!state.g3_currentGuessWord.includes(letter)) {
+            state.g3_guessedLetters.add(upperCaseLetter);
+            
+            if (!state.g3_currentGuessWord.includes(upperCaseLetter)) {
                 state.g3_wrongGuesses++;
             }
             checkWinConditionG3();
@@ -884,7 +729,7 @@
             if (currentGame !== 'game3') return;
             
             if (state.g3_gameStatus === 'no_words') {
-                container.innerHTML = `<p class="text-red-500 text-center text-xl p-8">遊戲無法開始，請先到「單字後台」新增單字。</p>`;
+                container.innerHTML = `<p class="text-red-500 text-center text-xl p-8">遊戲無法開始，請檢查內建單字庫。</p>`;
                 return;
             }
 
@@ -892,17 +737,18 @@
                 if (char === ' ') return '&nbsp;&nbsp;'; 
                 const isGameOver = state.g3_gameStatus === 'won' || state.g3_gameStatus === 'lost';
                 if (state.g3_guessedLetters.has(char) || isGameOver) {
-                    return char;
+                    return char.toLowerCase(); // 修正: 顯示小寫
                 }
                 return '_';
             }).join(' ');
 
             const alphabetBtns = ALPHABET.map(letter => {
+                const upperCaseLetter = letter.toUpperCase();
                 let btnClass = 'bg-white hover:bg-secondary-blue';
                 let onClick = `guessLetterG3('${letter}')`;
 
-                if (state.g3_guessedLetters.has(letter)) {
-                    btnClass = state.g3_currentGuessWord.includes(letter) ? 'bg-green-400 cursor-not-allowed' : 'bg-red-400 cursor-not-allowed';
+                if (state.g3_guessedLetters.has(upperCaseLetter)) {
+                    btnClass = state.g3_currentGuessWord.includes(upperCaseLetter) ? 'bg-green-400 cursor-not-allowed' : 'bg-red-400 cursor-not-allowed';
                     onClick = '';
                 }
 
@@ -914,7 +760,7 @@
                 return `
                     <button onclick="${onClick}" 
                             class="key-btn ${btnClass} active:shadow-key-active shadow-cute text-xl md:text-3xl font-extrabold rounded-xl transition duration-150 text-gray-800">
-                        ${letter}
+                        ${letter} <!-- 修正: 顯示小寫 -->
                     </button>
                 `;
             }).join('');
@@ -980,11 +826,24 @@
         function generateBingoCard() {
             const requiredSize = BINGO_SIZE * BINGO_SIZE; // 4x4 = 16
             if (BINGO_DICTIONARY.length < requiredSize) {
-                MessageBox.show(`賓果單字庫不足 ${requiredSize} 個，請更新程式碼。`, true);
+                MessageBox.show(`賓果單字庫不足 ${requiredSize} 個，請檢查內建單字庫。`, true);
                 return Array(requiredSize).fill('ERROR');
             }
-            const shuffledWords = shuffleArray(BINGO_DICTIONARY);
-            return shuffledWords.slice(0, requiredSize); // Slice to 16 words
+            // 由於賓果遊戲單字庫較小，我們需要確保每個玩家的卡片單字不重複
+            const usedWords = new Set();
+            let card = [];
+            
+            // 確保從 BINGO_DICTIONARY 複製一份單字池
+            let availablePool = shuffleArray(BINGO_DICTIONARY); 
+            
+            // 如果單字庫不夠 32 個 (2 * 16)，可能會重複，但這是唯一的靜態解決方案
+            
+            for (let i = 0; i < requiredSize; i++) {
+                // 這裡我們不強制單字不重複，因為單字庫可能不足 32 個
+                card.push(availablePool.pop()); 
+            }
+
+            return card;
         }
 
         function checkWinG4(player) {
@@ -992,7 +851,6 @@
             const size = BINGO_SIZE; // size = 4
             const card = player.card;
             const marked = player.marked;
-            const cardLength = size * size;
 
             // 檢查所有行和列
             for (let i = 0; i < size; i++) {
@@ -1024,18 +882,10 @@
             if (diag2Count === size) lines++;
             
             player.score = lines;
-            // 修正: 獲勝條件改為連兩條線
-            return lines >= 2; 
+            return lines >= 2; // 獲勝條件: 連兩條線
         }
 
         function initGame4() {
-            // Crossword 相關狀態不再需要，但為了兼容舊版代碼，清空一下
-            state.g4_answers = [];               
-            state.g4_grid = []; 
-            state.g4_activeSlots = [];           
-            state.g4_cellContents = {};          
-            state.g4_solutionContents = {};      
-            
             // Bingo 初始化
             state.g4_players[0].card = generateBingoCard();
             state.g4_players[0].marked = new Set();
@@ -1071,7 +921,7 @@
             }
             
             const nextWord = availableWords[0];
-            state.g4_lastCalledWord = nextWord;
+            state.g4_lastCalledWord = nextWord; // 儲存大寫單字 (內部邏輯)
             state.g4_calledWords.add(nextWord);
             
             // 1. 設定 '播報中' 狀態並立即渲染 UI (確保按鈕狀態切換)
@@ -1079,8 +929,8 @@
             state.g4_gameStatus = 'calling';
             renderGame4(); 
             
-            // 2. 語音播報
-            await callTTS(nextWord);
+            // 2. 語音播報 (使用瀏覽器 TTS - 播報大寫單字以確保發音清晰)
+            await callTTS(nextWord); 
             
             // 3. 語音結束後，重設狀態
             state.g4_isCalling = false; 
@@ -1107,7 +957,7 @@
             const player = state.g4_players.find(p => p.id === playerId);
             if (!player || state.g4_gameStatus !== 'calling' || player.winner) return;
 
-            const word = player.card[index];
+            const word = player.card[index]; // 大寫單字
 
             if (state.g4_calledWords.has(word)) {
                 if (player.marked.has(word)) {
@@ -1124,7 +974,7 @@
                 }
                 renderGame4();
             } else {
-                MessageBox.show(`單字 ${word} 尚未被唸出！`, true);
+                MessageBox.show(`單字 ${word.toLowerCase()} 尚未被唸出！`, true);
             }
         }
 
@@ -1138,7 +988,7 @@
                     return `
                         <div class="bingo-cell ${isMarked ? 'marked' : 'hover:bg-yellow-300'}" 
                              onclick="handleCardClickG4(${player.id}, ${index})">
-                            ${word}
+                            ${word.toLowerCase()} <!-- 修正: 顯示小寫 -->
                         </div>
                     `;
                 }).join('');
@@ -1148,7 +998,7 @@
                         <h3 class="text-xl font-bold text-center mb-3 ${player.winner ? 'text-green-700' : 'text-blue-800'}">
                             ${player.name} ${player.winner ? '🎉 WINNER 🎉' : ''} (線數: ${player.score})
                         </h3>
-                        <!-- 修正: 4x4 網格 -->
+                        <!-- 4x4 網格 -->
                         <div class="bingo-grid mx-auto" style="grid-template-columns: repeat(${BINGO_SIZE}, 1fr); grid-template-rows: repeat(${BINGO_SIZE}, 1fr);">
                             ${cellsHtml}
                         </div>
@@ -1157,16 +1007,16 @@
             };
 
             const controlArea = `
-                <!-- 修正: 移除 mt-6，並使用 mb-6 確保與下方卡片的間距 -->
                 <div class="text-center p-4 bg-keyboard-bg rounded-xl shadow-lg border-b-8 border-accent-yellow mb-6">
                     <h3 class="text-2xl font-bold text-gray-800 mb-3">
                         ${state.g4_gameStatus === 'ready' ? '準備開始' : state.g4_gameStatus === 'calling' ? '遊戲中' : '遊戲結束'}
                     </h3>
                     
                     <div class="mb-4 h-12 flex items-center justify-center">
-                        <!-- 修正: 突出顯示最新抽取的單字 -->
+                        <!-- 突出顯示最新抽取的單字 -->
                         <p class="text-4xl font-black text-red-700 transition duration-300">
-                            ${state.g4_lastCalledWord ? `單字: ${state.g4_lastCalledWord}` : state.g4_gameStatus === 'ready' ? '點擊開始按鈕' : '等待下一輪...'}
+                            <!-- 修正: 顯示小寫 -->
+                            ${state.g4_lastCalledWord ? `單字: ${state.g4_lastCalledWord.toLowerCase()}` : state.g4_gameStatus === 'ready' ? '點擊開始按鈕' : '等待下一輪...'}
                         </p>
                     </div>
 
@@ -1180,14 +1030,12 @@
                 </div>
             `;
 
-            // FIX: 將 controlArea 插入到 final HTML 輸出中，放在卡片上方
             container.innerHTML = `
                 <section class="w-full bg-secondary-blue p-4 rounded-xl shadow-inner border-b-8 border-blue-600">
                     <h2 class="text-xl md:text-3xl font-bold text-blue-800 mb-4 text-center">🎰 雙人英文賓果 (Two-Player Bingo)</h2>
-                    <!-- 修正: 描述文字反映 4x4 和兩條線獲勝 -->
                     <p class="text-center text-sm text-blue-900 mb-6">目標: 點擊中央按鈕聽取單字，並在您的 4x4 賓果卡上標記。最先完成兩條線（水平、垂直或對角線）者獲勝！</p>
                     
-                    <!-- 插入控制區塊 (移到卡片上方) -->
+                    <!-- 插入控制區塊 (放在卡片上方) -->
                     ${controlArea}
                     
                     <!-- 賓果卡並排顯示 (使用 flex-col md:flex-row 實現完全響應) -->
@@ -1203,12 +1051,37 @@
 
 
         // --- 遊戲 5: 字母順序排序 (Letter Order Sort) 邏輯 ---
+        
+        // 新增輔助函數：根據策略生成大小寫字母
+        function getRandomCaseLetterG5(letter, strategy) {
+            if (strategy === 'UPPER') return letter.toUpperCase();
+            if (strategy === 'LOWER') return letter.toLowerCase();
+            
+            // MIXED strategy
+            return Math.random() < 0.5 ? letter.toUpperCase() : letter.toLowerCase();
+        }
+
         function initGame5() {
             const totalLetters = 4;
-            let randomLetters = ALPHABET.sort(() => 0.5 - Math.random()).slice(0, totalLetters);
             
-            state.g5_letters = randomLetters.map(l => ({ id: crypto.randomUUID(), value: l, isDropped: false }));
-            state.g5_answer = [...randomLetters].sort(); // 正確答案 ( sorted )
+            // 1. 隨機選擇大小寫策略 (0: Upper, 1: Lower, 2: Mixed)
+            const strategyIndex = Math.floor(Math.random() * 3);
+            const strategies = ['UPPER', 'LOWER', 'MIXED'];
+            const currentStrategy = strategies[strategyIndex];
+
+            // 2. 選取 4 個不重複的字母基底 (大寫)
+            let baseRandomLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').sort(() => 0.5 - Math.random()).slice(0, totalLetters);
+            
+            // 3. 應用大小寫策略
+            let generatedLetters = baseRandomLetters.map(l => getRandomCaseLetterG5(l, currentStrategy));
+
+            // 4. 建立 state.g5_letters (亂序，帶有大小寫)
+            state.g5_letters = generatedLetters.map(l => ({ id: crypto.randomUUID(), value: l, isDropped: false }));
+            state.g5_letters = shuffleArray(state.g5_letters); 
+
+            // 5. 建立 state.g5_answer (根據字母表順序排序，保留原始大小寫)
+            state.g5_answer = [...generatedLetters].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' })); 
+
             state.g5_currentSort = Array(totalLetters).fill(null); 
 
             renderGame5();
@@ -1220,7 +1093,7 @@
                 return;
             }
             
-            // 修正: 唸出正確的字母順序 (state.g5_answer)
+            // 唸出正確的字母順序 (state.g5_answer)，因為是 sorted 且帶有大小寫
             const lettersToSpeak = state.g5_answer.join(', '); 
             
             const speakSequence = (count) => {
@@ -1246,7 +1119,7 @@
             const targetIndex = state.g5_currentSort.findIndex(item => item === null);
 
             if (targetIndex !== -1) {
-                state.g5_currentSort[targetIndex] = letter.value;
+                state.g5_currentSort[targetIndex] = letter.value; // 儲存大小寫字母
                 letter.isDropped = true; 
                 renderGame5();
                 checkCompletionG5();
@@ -1257,6 +1130,7 @@
             const char = state.g5_currentSort[index];
             if (!char) return;
 
+            // 根據值查找對應的字母物件
             const letter = state.g5_letters.find(l => l.value === char);
             if (letter) {
                 letter.isDropped = false;
@@ -1269,10 +1143,14 @@
         function checkCompletionG5() {
             if (state.g5_currentSort.some(item => item === null)) return;
             
+            // 比較時必須使用 case-sensitive 邏輯，因為答案是包含大小寫的
             const currentWord = state.g5_currentSort.join('');
             const answerWord = state.g5_answer.join('');
             
-            if (currentWord === answerWord) {
+            // 使用 localeCompare 進行大小寫敏感的精確比較
+            const isCorrect = currentWord.localeCompare(answerWord, 'en', { sensitivity: 'case' }) === 0;
+
+            if (isCorrect) {
                 MessageBox.show("恭喜！字母順序完全正確！🎉", false);
             } else {
                 const targetBoxes = document.querySelectorAll('.target-box');
@@ -1335,77 +1213,72 @@
 
 
         // --- 單字管理後台 邏輯 ---
-        async function addWord() {
-            const { collection, addDoc } = window.firebaseImports;
+        
+        function addWord() {
             const input = document.getElementById('new-word-input');
             const word = input.value.trim().toUpperCase();
 
-            // 調整：允許單字包含空格 (如 HOW OLD)，但主要還是字母
             if (!word || !/^[A-Z\s]+$/.test(word)) { 
                 MessageBox.show("請輸入有效的英文字母單字或詞組。");
                 return;
             }
 
-            if (!db || !userId) {
-                MessageBox.show("系統尚未初始化，請稍候。");
-                return;
-            }
-
-            const exists = wordList.some(item => item.word.toUpperCase() === word);
+            // 檢查是否重複
+            const exists = localWordList.some(item => item.word.toUpperCase() === word);
             if (exists) {
                 MessageBox.show(`單字 ${word} 已經存在於列表中。`);
                 input.value = '';
                 return;
             }
+            
+            // 新增單字 (使用 UUID 作為 ID)
+            localWordList.push({ id: crypto.randomUUID(), word: word });
+            saveWordsToLocal();
+            input.value = '';
+            MessageBox.show(`單字 ${word} 新增成功！(已儲存在您的瀏覽器)`, false);
 
-            try {
-                const path = `artifacts/${appId}/users/${userId}/${FIREBASE_COLLECTION}`;
-                await addDoc(collection(db, path), { word: word });
-                input.value = '';
-                MessageBox.show(`單字 ${word} 新增成功！`, false);
-            } catch (error) {
-                console.error("Error adding document: ", error);
-                MessageBox.show("新增單字失敗，請檢查連線。", true);
-            }
+            renderWordAdmin();
         }
 
-        async function deleteWord(id) {
-            const { doc, deleteDoc } = window.firebaseImports;
-            if (!db || !userId) return;
+        function deleteWord(id) {
+            const initialLength = localWordList.length;
+            // 過濾掉要刪除的單字
+            localWordList = localWordList.filter(item => item.id !== id);
 
-            try {
-                const path = `artifacts/${appId}/users/${userId}/${FIREBASE_COLLECTION}`;
-                await deleteDoc(doc(db, path, id));
+            if (localWordList.length < initialLength) {
+                saveWordsToLocal();
                 MessageBox.show("單字刪除成功！", false);
-            } catch (error) {
-                console.error("Error deleting document: ", error);
-                MessageBox.show("刪除單字失敗。", true);
+            } else {
+                 MessageBox.show("單字刪除失敗，找不到該 ID。", true);
             }
+            
+            renderWordAdmin();
         }
 
         function renderWordAdmin() {
             const container = document.getElementById('game-content');
             if (currentGame !== 'admin') return;
-
-            const wordListHtml = wordList.map((item, index) => `
+            
+            // 由於每次 renderApp 都會 loadWordsFromLocal，這裡直接使用 localWordList
+            const wordListHtml = localWordList.map((item, index) => `
                 <li class="flex justify-between items-center p-3 bg-white rounded-lg shadow-sm mb-2 border-l-4 border-primary-pink">
                     <span class="text-lg font-bold text-gray-800">${index + 1}. ${item.word}</span>
                     <button onclick="deleteWord('${item.id}')" class="text-red-500 hover:text-red-700 font-bold p-1 rounded-full bg-red-100 transition duration-150">
-                        🗑️
+                        🗑️ 刪除
                     </button>
                 </li>
             `).join('');
 
             container.innerHTML = `
                 <section class="w-full bg-primary-pink p-4 rounded-xl shadow-inner border-b-8 border-pink-600">
-                    <h2 class="text-xl md:text-3xl font-bold text-white mb-2 text-center">⚙️ 單字管理後台 (Word Admin Panel)</h2>
-                    <p class="text-center text-pink-100">請注意: 賓果遊戲單字為內建，此單字庫僅供「猜單字」遊戲使用。</p>
+                    <h2 class="text-xl md:text-3xl font-bold text-white mb-2 text-center">⚙️ 單字管理後台 (Local Storage Admin Panel)</h2>
+                    <p class="text-center text-pink-100">💡 這裡的單字僅儲存在您當前的瀏覽器中，並供「猜單字」遊戲使用。</p>
                 </section>
 
                 <div class="p-6 bg-keyboard-bg rounded-xl shadow-md">
                     <label for="new-word-input" class="block text-lg font-semibold text-gray-800 mb-2">新增單字/詞組</label>
                     <div class="flex space-x-2">
-                        <input type="text" id="new-word-input" placeholder="例如：PIG" maxlength="15"
+                        <input type="text" id="new-word-input" placeholder="例如：PIG" maxlength="20"
                                class="flex-1 p-3 border-2 border-gray-300 rounded-lg focus:ring-secondary-blue focus:border-secondary-blue uppercase">
                         <button onclick="addWord()" class="bg-secondary-blue hover:bg-blue-400 text-blue-900 font-bold py-3 px-6 rounded-lg shadow-cute transition duration-150">
                             ➕ 新增
@@ -1414,10 +1287,11 @@
                 </div>
 
                 <div class="p-6 bg-white rounded-xl shadow-md border-2 border-gray-200">
-                    <h3 class="text-xl font-bold text-gray-800 mb-4">目前單字列表 (${wordList.length} 個)</h3>
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">目前自訂單字列表 (${localWordList.length} 個)</h3>
                     <ul class="max-h-80 overflow-y-auto">
-                        ${wordListHtml.length > 0 ? wordListHtml : '<p class="text-gray-500 text-center py-4">目前沒有單字。請新增！</p>'}
+                        ${localWordList.length > 0 ? wordListHtml : '<p class="text-gray-500 text-center py-4">目前沒有單字。請新增！</p>'}
                     </ul>
+                    ${localWordList.length > 0 ? '<p class="text-xs text-gray-400 mt-4 text-center">您的單字已自動儲存。</p>' : ''}
                 </div>
             `;
         }
