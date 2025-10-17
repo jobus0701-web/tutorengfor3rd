@@ -68,7 +68,7 @@
         }
 
         /* Bingo 相關樣式 */
-        /* 移除固定的 5x5 CSS，改用 inline style 實現 4x4 */
+        /* 移除固定的 5x5 CSS, 改用 inline style 實現 4x4 */
         .bingo-grid {
             display: grid;
             gap: 4px;
@@ -107,7 +107,7 @@
     </style>
 
     <script>
-        // 設定 Tailwind 配置，使用柔和可愛的馬卡龍配色
+        // 設定 Tailwind 配置, 使用柔和可愛的馬卡龍配色
         tailwind.config = {
             theme: {
                 extend: {
@@ -139,7 +139,7 @@
         <h1 class="text-3xl md:text-5xl font-extrabold text-white tracking-wider">
             <!-- 可愛小豬圖示 (SVG) -->
             <svg class="h-10 w-10 md:h-12 md:w-12 inline-block mr-3 transform -translate-y-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM15 9C15.8284 9 16.5 8.32843 16.5 7.5C16.5 6.67157 15.8284 6 15 6C14.1716 6 13.5 6.67157 13.5 7.5C13.5 8.32843 14.1716 9 15 9ZM9 9C9.82843 9 10.5 8.32843 10.5 7.5C10.5 6.67157 9.82843 6 9 6C8.17157 6 7.5 6.67157 7.5 7.5C7.5 8.32843 8.17157 9 9 9Z" fill="#FF8FAB"/>
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM15 9C15.8284 9 16.5 8.32843 16.5 = 7.5C16.5 6.67157 15.8284 6 15 6C14.1716 6 13.5 6.67157 13.5 7.5C13.5 8.32843 14.1716 9 15 9ZM9 9C9.82843 9 10.5 8.32843 10.5 7.5C10.5 6.67157 9.82843 6 9 6C8.17157 6 7.5 6.67157 7.5 7.5C7.5 8.32843 8.17157 9 9 9Z" fill="#FF8FAB"/>
                 <path d="M12 17C14.2091 17 16 15.2091 16 13C16 10.7909 14.2091 9 12 9C9.79086 9 8 10.7909 8 13C8 15.2091 9.79086 17 12 17Z" fill="#F0B5C2"/>
                 <circle cx="11" cy="13" r="1" fill="#FF8FAB"/>
                 <circle cx="13" cy="13" r="1" fill="#FF8FAB"/>
@@ -306,10 +306,10 @@
         }
 
         async function callTTS(text) {
-            if (state.g4_isCalling) return;
-
-            state.g4_isCalling = true;
-            renderGame4(); 
+            // Note: state.g4_isCalling is set by startCallingG4
+            
+            // Add small delay to ensure UI updates before blocking TTS fetch starts
+            await new Promise(r => setTimeout(r, 50)); 
 
             try {
                 const payload = {
@@ -370,9 +370,6 @@
             } catch (error) {
                 console.error("TTS API call failed:", error);
                 MessageBox.show(`語音生成失敗: ${error.message}`, true);
-            } finally {
-                state.g4_isCalling = false;
-                renderGame4();
             }
         }
 
@@ -1066,8 +1063,6 @@
             
             if (state.g4_isCalling) return;
             
-            state.g4_gameStatus = 'calling';
-            
             const availableWords = shuffleArray(BINGO_DICTIONARY.filter(w => !state.g4_calledWords.has(w)));
             
             if (availableWords.length === 0) {
@@ -1079,10 +1074,18 @@
             state.g4_lastCalledWord = nextWord;
             state.g4_calledWords.add(nextWord);
             
-            // 語音播報
+            // 1. 設定 '播報中' 狀態並立即渲染 UI (確保按鈕狀態切換)
+            state.g4_isCalling = true;
+            state.g4_gameStatus = 'calling';
+            renderGame4(); 
+            
+            // 2. 語音播報
             await callTTS(nextWord);
             
-            // 檢查是否有贏家
+            // 3. 語音結束後，重設狀態
+            state.g4_isCalling = false; 
+
+            // 4. 檢查是否有贏家
             let winnerFound = false;
             state.g4_players.forEach(player => {
                 if (checkWinG4(player)) {
@@ -1096,7 +1099,7 @@
                 renderGame4();
                 MessageBox.show(`賓果！玩家 ${state.g4_players.filter(p => p.winner).map(p => p.id).join(' 和 ')} 獲勝！`, false);
             } else {
-                renderGame4();
+                renderGame4(); // 確保 UI 更新以移除 '播報中...' 狀態
             }
         }
 
@@ -1154,14 +1157,16 @@
             };
 
             const controlArea = `
-                <div class="text-center p-4 bg-keyboard-bg rounded-xl shadow-lg border-b-8 border-accent-yellow">
+                <!-- 修正: 移除 mt-6，並使用 mb-6 確保與下方卡片的間距 -->
+                <div class="text-center p-4 bg-keyboard-bg rounded-xl shadow-lg border-b-8 border-accent-yellow mb-6">
                     <h3 class="text-2xl font-bold text-gray-800 mb-3">
                         ${state.g4_gameStatus === 'ready' ? '準備開始' : state.g4_gameStatus === 'calling' ? '遊戲中' : '遊戲結束'}
                     </h3>
                     
                     <div class="mb-4 h-12 flex items-center justify-center">
-                        <p class="text-3xl font-extrabold text-red-600 transition duration-300">
-                            ${state.g4_lastCalledWord ? `最新單字: ${state.g4_lastCalledWord}` : state.g4_gameStatus === 'ready' ? '點擊開始按鈕' : '等待下一輪...'}
+                        <!-- 修正: 突出顯示最新抽取的單字 -->
+                        <p class="text-4xl font-black text-red-700 transition duration-300">
+                            ${state.g4_lastCalledWord ? `單字: ${state.g4_lastCalledWord}` : state.g4_gameStatus === 'ready' ? '點擊開始按鈕' : '等待下一輪...'}
                         </p>
                     </div>
 
@@ -1175,19 +1180,22 @@
                 </div>
             `;
 
+            // FIX: 將 controlArea 插入到 final HTML 輸出中，放在卡片上方
             container.innerHTML = `
                 <section class="w-full bg-secondary-blue p-4 rounded-xl shadow-inner border-b-8 border-blue-600">
                     <h2 class="text-xl md:text-3xl font-bold text-blue-800 mb-4 text-center">🎰 雙人英文賓果 (Two-Player Bingo)</h2>
                     <!-- 修正: 描述文字反映 4x4 和兩條線獲勝 -->
                     <p class="text-center text-sm text-blue-900 mb-6">目標: 點擊中央按鈕聽取單字，並在您的 4x4 賓果卡上標記。最先完成兩條線（水平、垂直或對角線）者獲勝！</p>
                     
+                    <!-- 插入控制區塊 (移到卡片上方) -->
                     ${controlArea}
                     
-                    <!-- 賓果卡並排顯示 -->
-                    <div class="flex flex-col md:flex-row gap-6 mt-6">
+                    <!-- 賓果卡並排顯示 (使用 flex-col md:flex-row 實現完全響應) -->
+                    <div class="flex flex-col md:flex-row gap-6">
                         ${renderCard(state.g4_players[0])}
                         ${renderCard(state.g4_players[1])}
                     </div>
+                    
                 </section>
             `;
         }
